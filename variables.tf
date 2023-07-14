@@ -4,7 +4,7 @@ variable "admin_username" {
 }
 variable "organization_name" {
   type = string
-  default = "zeblok"
+  default = "enterprise"
 }
 variable "vm_size" {
   type = string
