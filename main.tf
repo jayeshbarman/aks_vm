@@ -11,7 +11,7 @@ locals {
   key_name = "${var.organization_name}-${random_string.suffix.result}"
 }
 
-resource "azurerm_resource_group" "zeblok" {
+resource "azurerm_resource_group" "jys" {
   name     = local.key_name
   location = "West US"
 }
@@ -33,31 +33,31 @@ resource "local_sensitive_file" "private_key" {
 
 resource "azurerm_public_ip" "eip" {
   count               = 3
-  name                = "zeblok-pip${count.index}"
-  location            = azurerm_resource_group.zeblok.location
-  resource_group_name = azurerm_resource_group.zeblok.name
+  name                = "public_ip${count.index}"
+  location            = azurerm_resource_group.jys.location
+  resource_group_name = azurerm_resource_group.jys.name
   allocation_method   = "Static"
   sku                 = "Standard"
 }
 
 resource "azurerm_virtual_network" "main" {
-  name                = "zeblok-network"
+  name                = "jys-network"
   address_space       = ["10.0.0.0/16"]
-  location            = azurerm_resource_group.zeblok.location
-  resource_group_name = azurerm_resource_group.zeblok.name
+  location            = azurerm_resource_group.jys.location
+  resource_group_name = azurerm_resource_group.jys.name
 }
 
 resource "azurerm_subnet" "internal" {
   name                 = "internal"
-  resource_group_name  = azurerm_resource_group.zeblok.name
+  resource_group_name  = azurerm_resource_group.jys.name
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = ["10.0.2.0/24"]
 }
 
-resource "azurerm_network_security_group" "zeblok" {
+resource "azurerm_network_security_group" "jys" {
   name                = "${local.key_name}-security-group"
-  location            = azurerm_resource_group.zeblok.location
-  resource_group_name = azurerm_resource_group.zeblok.name
+  location            = azurerm_resource_group.jys.location
+  resource_group_name = azurerm_resource_group.jys.name
 
   security_rule {
     name                       = "SSH"
@@ -99,9 +99,9 @@ resource "azurerm_network_security_group" "zeblok" {
 
 resource "azurerm_network_interface" "main" {
   count               = 3
-  name                = "zeblok-nic${count.index}"
-  location            = azurerm_resource_group.zeblok.location
-  resource_group_name = azurerm_resource_group.zeblok.name
+  name                = "nic${count.index}"
+  location            = azurerm_resource_group.jys.location
+  resource_group_name = azurerm_resource_group.jys.name
 
   ip_configuration {
     name                          = "ipconfig${count.index}"
@@ -109,19 +109,19 @@ resource "azurerm_network_interface" "main" {
     private_ip_address_allocation = "Dynamic"
     public_ip_address_id          = azurerm_public_ip.eip[count.index].id
   }
-  depends_on = [ azurerm_network_security_group.zeblok ]
+  depends_on = [ azurerm_network_security_group.jys ]
 }
 
 resource "azurerm_subnet_network_security_group_association" "subnet_sec" {
   subnet_id                 = azurerm_subnet.internal.id
-  network_security_group_id = azurerm_network_security_group.zeblok.id
+  network_security_group_id = azurerm_network_security_group.jys.id
 }
 
 resource "azurerm_virtual_machine" "main" {
   count                = 3
   name                 = "${local.key_name}-vm${count.index}"
-  location             = azurerm_resource_group.zeblok.location
-  resource_group_name  = azurerm_resource_group.zeblok.name
+  location             = azurerm_resource_group.jys.location
+  resource_group_name  = azurerm_resource_group.jys.name
   network_interface_ids = [azurerm_network_interface.main[count.index].id]
   vm_size              = var.vm_size
 
@@ -172,8 +172,8 @@ EOF
 resource "azurerm_managed_disk" "additional_disks" {
   count                = 3
   name                 = "${local.key_name}-disk${count.index}"
-  location             = azurerm_resource_group.zeblok.location
-  resource_group_name  = azurerm_resource_group.zeblok.name
+  location             = azurerm_resource_group.jys.location
+  resource_group_name  = azurerm_resource_group.jys.name
   storage_account_type = "Standard_LRS"
   create_option        = "Empty"
   disk_size_gb         = "50"
@@ -189,18 +189,7 @@ resource "azurerm_virtual_machine_data_disk_attachment" "disk" {
 
 resource "null_resource" "bash_command" {
   provisioner "local-exec" {
-    command = "printf 'bash intel_script.sh ${azurerm_public_ip.eip[0].ip_address} ${azurerm_network_interface.main[0].ip_configuration[0].private_ip_address} core1 ${azurerm_network_interface.main[1].ip_configuration[0].private_ip_address} core2 ${azurerm_network_interface.main[2].ip_configuration[0].private_ip_address} core3 ${local.key_name} ${local.key_name}.pem' > output.txt"
-  }
-
-  provisioner "local-exec" {
-      command =  "printf 'root@${azurerm_public_ip.eip[0].ip_address}\nroot@${azurerm_public_ip.eip[1].ip_address}\nroot@${azurerm_public_ip.eip[2].ip_address}\n' > ./Launcher_enterprise/ip_core "
-  }
-
-  provisioner "local-exec" {
-    command =  "printf '${azurerm_public_ip.eip[0].ip_address}' > ./Launcher_enterprise/elastic_ip "
-  }
-  provisioner "local-exec" {
-    command =  "printf '${azurerm_public_ip.eip[0].ip_address}' > ./Launcher_enterprise/edge/elastic_ip "
+      command =  "printf 'root@${azurerm_public_ip.eip[0].ip_address}\nroot@${azurerm_public_ip.eip[1].ip_address}\nroot@${azurerm_public_ip.eip[2].ip_address}\n' > ./eip "
   }
 }
 
@@ -209,9 +198,3 @@ output "instance_public_ips" {
   description = "The public IP addresses of all the instances"
   value       = azurerm_public_ip.eip[*].ip_address
 }
-
-output "bash_command_output" {
-  description = "Output of the bash command"
-  value       = "bash intel_script.sh ${azurerm_public_ip.eip[0].ip_address} ${azurerm_network_interface.main[0].ip_configuration[0].private_ip_address} core1 ${azurerm_network_interface.main[1].ip_configuration[0].private_ip_address} core2 ${azurerm_network_interface.main[2].ip_configuration[0].private_ip_address} core3 ${local.key_name} ${local.key_name}.pem"
-}
-
